@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.gradlew build:*)",
+      "Bash(gradlew.bat build)",
+      "Bash(cmd /c \"gradlew.bat build\")",
+      "mcp__idea__build_project",
+      "mcp__idea__search_symbol",
+      "mcp__idea__read_file",
+      "mcp__idea__get_run_configurations",
+      "mcp__idea__list_directory_tree",
+      "Bash(cmd /c \"mkdir \"\"C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3\\src\\client\\resources\\assets\\advanced-baby-chicken\\textures\\entity\\chicken\"\"\")",
+      "Bash(cmd /c \"del \"\"C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3\\src\\client\\java\\com\\advanced\\baby\\chicken\\client\\SleepingEyesTextureGenerator.java\"\"\")",
+      "mcp__idea__search_regex",
+      "mcp__idea__search_text",
+      "Bash(cmd /c \"cd /d C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3 && gradlew.bat build\")",
+      "Bash(cmd /c \"cd /d C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3 && gradlew.bat build 2>&1\")",
+      "Bash(find:*)",
+      "Bash(tree:*)",
+      "Bash(cmd /c \"cd /d C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3 && gradlew.bat build --no-daemon 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\Users\\janni\\mc-dev\\dih\\advanced-baby-chicken-template-26.3 && .\\gradlew runClient 2>&1\")",
+      "mcp__idea__execute_terminal_command",
+      "mcp__idea__execute_run_configuration",
+      "mcp__idea__search_file",
+      "mcp__idea__git_status",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
