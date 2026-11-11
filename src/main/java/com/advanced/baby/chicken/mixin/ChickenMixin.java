@@ -3,6 +3,7 @@ package com.advanced.baby.chicken.mixin;
 import com.advanced.baby.chicken.AdvancedBabyChicken;
 import com.advanced.baby.chicken.DirtyBabyChicken;
 import com.advanced.baby.chicken.SleepingBabyChicken;
+import com.advanced.baby.chicken.TotemBabyChicken;
 import com.advanced.baby.chicken.goal.BabyChickenSleepOnBedGoal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -11,10 +12,14 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.tags.BlockTags;
+import net.minecraft.util.Prediction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -28,6 +33,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -36,11 +43,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Mixin to add custom AI goals, sleeping state, and dirty state tracking to Chicken entities.
- * Implements SleepingBabyChicken and DirtyBabyChicken interfaces.
+ * Mixin to add custom AI goals, sleeping state, dirty state tracking, and totem of undying support to Chicken entities.
+ * Implements SleepingBabyChicken, DirtyBabyChicken, and TotemBabyChicken interfaces.
  */
 @Mixin(Chicken.class)
-public abstract class ChickenMixin extends Animal implements SleepingBabyChicken, DirtyBabyChicken {
+public abstract class ChickenMixin extends Animal implements SleepingBabyChicken, DirtyBabyChicken, TotemBabyChicken {
 
     @Unique
     private static final EntityDataAccessor<Boolean> DATA_SLEEPING_ON_BED =
@@ -49,6 +56,10 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
     @Unique
     private static final EntityDataAccessor<Boolean> DATA_DIRTY =
         SynchedEntityData.defineId(Chicken.class, EntityDataSerializers.BOOLEAN);
+
+    @Unique
+    private static final EntityDataAccessor<ItemStack> DATA_TOTEM =
+        SynchedEntityData.defineId(Chicken.class, EntityDataSerializers.ITEM_STACK);
 
     @Unique
     private int advancedBabyChicken$dirtyTicks = 0;
@@ -101,6 +112,7 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
     private void addCustomData(SynchedEntityData.Builder builder, CallbackInfo ci) {
         builder.define(DATA_SLEEPING_ON_BED, false);
         builder.define(DATA_DIRTY, false);
+        builder.define(DATA_TOTEM, ItemStack.EMPTY);
     }
 
     /**
@@ -196,6 +208,45 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
         this.advancedBabyChicken$dirtyTicks = ticks;
     }
 
+    // ===== TotemBabyChicken interface implementation =====
+
+    @Override
+    public boolean advancedBabyChicken$hasTotem() {
+        return !this.entityData.get(DATA_TOTEM).isEmpty();
+    }
+
+    @Override
+    public ItemStack advancedBabyChicken$getTotem() {
+        return this.entityData.get(DATA_TOTEM);
+    }
+
+    @Override
+    public void advancedBabyChicken$setTotem(ItemStack totem) {
+        this.entityData.set(DATA_TOTEM, totem);
+    }
+
+    /**
+     * Check if an item is a helmet a baby chicken can wear: head armor that has a wearable armor model.
+     * This excludes other head items like carved pumpkins and mob heads.
+     */
+    @Unique
+    private boolean advancedBabyChicken$isHelmet(ItemStack itemStack) {
+        Equippable equippable = itemStack.get(DataComponents.EQUIPPABLE);
+        return equippable != null
+            && equippable.assetId().isPresent()
+            && this.isEquippableInSlot(itemStack, EquipmentSlot.HEAD);
+    }
+
+    /**
+     * Put an item in the player's inventory, or drop it at their feet if the inventory is full.
+     */
+    @Unique
+    private static void advancedBabyChicken$giveToPlayer(Player player, ItemStack itemStack) {
+        if (!player.getInventory().add(itemStack)) {
+            player.drop(itemStack, false, Prediction.SERVER_ONLY);
+        }
+    }
+
     /**
      * Check if the block below the chicken is a "dirty" block that can make it dirty.
      */
@@ -285,6 +336,15 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
                     0.01 + this.random.nextDouble() * 0.02,   // Upward float
                     (this.random.nextDouble() - 0.5) * 0.02   // Slight horizontal drift
                 );
+            }
+        }
+
+        // A grown-up chicken no longer fits its helmet - it pops off
+        if (!this.isBaby() && this.level() instanceof ServerLevel serverLevel) {
+            ItemStack helmet = this.getItemBySlot(EquipmentSlot.HEAD);
+            if (!helmet.isEmpty()) {
+                this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+                this.spawnAtLocation(serverLevel, helmet);
             }
         }
 
@@ -395,6 +455,115 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
 
+        // Handle helmet interactions for baby chickens
+        if (this.isBaby()) {
+            ItemStack wornHelmet = this.getItemBySlot(EquipmentSlot.HEAD);
+
+            // Put a helmet on the baby chicken (swaps with the one it is already wearing)
+            if (this.advancedBabyChicken$isHelmet(itemStack)) {
+                if (!this.level().isClientSide()) {
+                    ItemStack newHelmet = itemStack.copyWithCount(1);
+                    if (!player.getAbilities().instabuild) {
+                        itemStack.shrink(1);
+                    }
+
+                    // The vanilla head slot applies the armor stats and enchantments,
+                    // plays the equip sound, syncs to clients and is saved with the chicken
+                    this.setItemSlot(EquipmentSlot.HEAD, newHelmet);
+                    // Always drop the helmet undamaged when the chicken dies
+                    this.setGuaranteedDrop(EquipmentSlot.HEAD);
+
+                    if (!wornHelmet.isEmpty()) {
+                        advancedBabyChicken$giveToPlayer(player, wornHelmet);
+                    }
+
+                    AdvancedBabyChicken.LOGGER.debug("Baby chicken put on a helmet!");
+                }
+                return InteractionResult.SUCCESS;
+            }
+
+            // Take the helmet off (empty hand + shift-click). Comes before the totem.
+            if (itemStack.isEmpty() && player.isSecondaryUseActive() && !wornHelmet.isEmpty()) {
+                if (!this.level().isClientSide()) {
+                    this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+                    advancedBabyChicken$giveToPlayer(player, wornHelmet);
+
+                    this.level().playSound(
+                        null,
+                        this.getX(),
+                        this.getY(),
+                        this.getZ(),
+                        SoundEvents.ITEM_PICKUP,
+                        SoundSource.NEUTRAL,
+                        1.0F,
+                        0.8F
+                    );
+
+                    AdvancedBabyChicken.LOGGER.debug("Helmet taken from baby chicken!");
+                }
+                return InteractionResult.SUCCESS;
+            }
+        }
+
+        // Handle totem interactions for baby chickens
+        if (this.isBaby()) {
+            // Give totem to baby chicken
+            if (itemStack.is(Items.TOTEM_OF_UNDYING) && !this.advancedBabyChicken$hasTotem()) {
+                if (!this.level().isClientSide()) {
+                    // Take one totem from the player
+                    ItemStack totemCopy = itemStack.copyWithCount(1);
+                    this.advancedBabyChicken$setTotem(totemCopy);
+
+                    if (!player.getAbilities().instabuild) {
+                        itemStack.shrink(1);
+                    }
+
+                    // Play equip sound
+                    this.level().playSound(
+                        null,
+                        this.getX(),
+                        this.getY(),
+                        this.getZ(),
+                        SoundEvents.ITEM_PICKUP,
+                        SoundSource.NEUTRAL,
+                        1.0F,
+                        1.0F
+                    );
+
+                    AdvancedBabyChicken.LOGGER.debug("Baby chicken received a totem of undying!");
+                }
+                return InteractionResult.SUCCESS;
+            }
+
+            // Take totem from baby chicken (empty hand + shift-click)
+            if (itemStack.isEmpty() && player.isSecondaryUseActive() && this.advancedBabyChicken$hasTotem()) {
+                if (!this.level().isClientSide()) {
+                    ItemStack totem = this.advancedBabyChicken$getTotem().copy();
+                    this.advancedBabyChicken$setTotem(ItemStack.EMPTY);
+
+                    // Give the totem to the player or drop it
+                    if (!player.getInventory().add(totem)) {
+                        player.drop(totem, false, Prediction.SERVER_ONLY);
+                    }
+
+                    // Play sound
+                    this.level().playSound(
+                        null,
+                        this.getX(),
+                        this.getY(),
+                        this.getZ(),
+                        SoundEvents.ITEM_PICKUP,
+                        SoundSource.NEUTRAL,
+                        1.0F,
+                        0.8F
+                    );
+
+                    AdvancedBabyChicken.LOGGER.debug("Totem of undying taken from baby chicken!");
+                }
+                return InteractionResult.SUCCESS;
+            }
+        }
+
         // Handle water bucket cleaning for dirty baby chickens
         if (this.isBaby() && this.advancedBabyChicken$isDirty() && itemStack.is(Items.WATER_BUCKET)) {
             if (!this.level().isClientSide()) {
@@ -480,4 +649,26 @@ public abstract class ChickenMixin extends Animal implements SleepingBabyChicken
         // Call the parent implementation for normal behavior
         return super.mobInteract(player, hand);
     }
+
+    // ===== NBT Persistence for Totem =====
+
+    /**
+     * Inject into readAdditionalSaveData to load totem data.
+     */
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    private void loadTotemData(ValueInput input, CallbackInfo ci) {
+        input.read("BabyChickenTotem", ItemStack.CODEC).ifPresent(this::advancedBabyChicken$setTotem);
+    }
+
+    /**
+     * Inject into addAdditionalSaveData to save totem data.
+     */
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    private void saveTotemData(ValueOutput output, CallbackInfo ci) {
+        ItemStack totem = this.advancedBabyChicken$getTotem();
+        if (!totem.isEmpty()) {
+            output.store("BabyChickenTotem", ItemStack.CODEC, totem);
+        }
+    }
+
 }

@@ -10,6 +10,7 @@ src/
 │   ├── AdvancedBabyChicken.java          # Main mod entry point
 │   ├── SleepingBabyChicken.java          # Interface for sleeping state
 │   ├── DirtyBabyChicken.java             # Interface for dirty state
+│   ├── TotemBabyChicken.java             # Interface for totem state
 │   ├── goal/
 │   │   └── BabyChickenSleepOnBedGoal.java # AI goal for bed-seeking at night
 │   └── mixin/
@@ -19,8 +20,13 @@ src/
     ├── AdvancedBabyChickenClient.java     # Client entry point
     ├── SleepingChickenRenderState.java    # Render state interface for sleeping
     ├── DirtyChickenRenderState.java       # Render state interface for dirty
+    ├── TotemChickenRenderState.java       # Render state interface for totem
     ├── DirtyChickenTextureGenerator.java  # Generates mud spots texture
     ├── DirtyBabyChickenLayer.java         # Render layer for dirty overlay
+    ├── TotemBabyChickenLayer.java         # Render layer for totem on wing
+    ├── HelmetChickenRenderState.java      # Render state interface for helmet
+    ├── BabyChickenHelmetModel.java        # Half-size player helmet model
+    ├── HelmetBabyChickenLayer.java        # Render layer for worn helmet
     ├── SleepingEyesTextureGenerator.java  # Generates sleeping eyes texture (unused)
     └── mixin/
         ├── ChickenRenderStateMixin.java   # Adds custom state to render state
@@ -52,7 +58,50 @@ When fed:
 
 Baby chickens follow players holding these items (TemptGoal).
 
-### 3. Dirty Mechanic
+### 3. Totem of Undying
+Baby chickens can hold a Totem of Undying for death protection!
+
+**Giving a Totem:**
+- Right-click a baby chicken with a Totem of Undying
+- The totem is removed from your inventory and given to the chicken
+- The totem is visually rendered on the chicken's wing
+
+**Taking Back the Totem:**
+- Shift + Right-click on a baby chicken with an empty hand
+- The totem is returned to your inventory (or dropped if full)
+
+**Death Protection:**
+- When a baby chicken holding a totem would die from damage:
+  - The totem is consumed
+  - Health is set to 1 HP
+  - Regeneration, Absorption, and Fire Resistance effects are applied
+  - The totem activation animation plays (same as players)
+- Void damage bypasses totem protection (same as vanilla)
+
+**Additional Behavior:**
+- Totem state is saved/loaded with the chicken (NBT persistence)
+- If the chicken dies without the totem activating (e.g., void), the totem is dropped
+
+**Implementation:**
+- `TotemBabyChicken.java` - Interface for totem state
+- `TotemChickenRenderState.java` - Client render state interface
+- `TotemBabyChickenLayer.java` - Renders the totem on the wing
+- `DATA_TOTEM` - ItemStack synced entity data in ChickenMixin
+
+### 4. Helmets
+Baby chickens can wear any armor helmet (including turtle shell; not pumpkins or mob heads).
+
+- Right-click with a helmet to put it on (swaps with the one already worn)
+- Shift + Right-click with an empty hand takes the helmet off (helmet first, then the totem)
+- The helmet lives in the vanilla `EquipmentSlot.HEAD`, so armor, toughness, enchantments,
+  client sync and saving are all handled by vanilla
+- `setGuaranteedDrop(HEAD)` makes it always drop undamaged on death
+- When the chicken grows up, the helmet pops off and is dropped (`aiStep`)
+- Rendering: `BabyChickenHelmetModel` is the vanilla player helmet cube at 0.5 scale
+  (player head 8px, baby chicken body 4px), attached to the `body` part and drawn through
+  the vanilla `EquipmentLayerRenderer` (dyes, trims and glint work)
+
+### 5. Dirty Mechanic
 Baby chickens get dirty over time under certain conditions:
 
 **Getting Dirty:**
@@ -79,6 +128,7 @@ Baby chickens get dirty over time under certain conditions:
 **Synced Entity Data (ChickenMixin.java):**
 - `DATA_SLEEPING_ON_BED` - Boolean, synced to client
 - `DATA_DIRTY` - Boolean, synced to client
+- `DATA_TOTEM` - ItemStack, synced to client
 - `advancedBabyChicken$dirtyTicks` - Integer, server-only counter
 
 **Speed Modifier:**
